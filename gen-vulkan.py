@@ -11,8 +11,25 @@ def writeout( out, str ):
 def buildenums( vkpath ):
   f = open( vkpath, "r" )
   strLine = '\n'
-  result = ''
+  result = """
+#undef enum_ops  
+#define enum_ops( TYPE0, TYPE1 ) \\
+inline constexpr TYPE0 operator |( TYPE0 r0, TYPE0 r1 ) \\
+{\\
+  return static_cast<TYPE0>( (int)r0 | (int)r1 );\\
+}\\
+inline constexpr bool operator==( const TYPE1& r0, const TYPE0& r1 )\\
+{\\
+  return static_cast<TYPE1>(r1) == r0;\
+}\\
+inline constexpr TYPE1 operator*( const TYPE0& bits )\\
+{\\
+  return static_cast<TYPE1>( bits );\\
+}\\
+
+"""
   enumlist = {}
+
   while ( len( strLine ) ):
     strLine = f.readline()
 
@@ -24,12 +41,20 @@ def buildenums( vkpath ):
     if( m ):
       decl = m.group(0)
       decl = decl.replace('{', '').strip()
-      enumlist[( (decl.split(' ')[2].strip() ) )] = 1
-
+      enumClassName = ((decl.split(' ')[2])[2:])
+      enumMap = 'Vk%s' % enumClassName
+      opsClassName = 'Vk%s' % enumClassName
+      if 'FlagBits' in enumClassName:
+        opsClassName = 'Vk%s' % enumClassName.replace( 'FlagBits', 'Flags' )
+        enumClassName = enumClassName.replace('FlagBits', 'Bit') 
+        enumMap = opsClassName
+      
+      enumlist[enumMap] = enumClassName
       enumChunks = re.findall('[A-Z][^A-Z]*', decl)
       enumChunks.extend( '3'*10 )
-      enumOut = '/* Enum: %s */\n'  % (decl.split(' ')[2])  
-      enumOut += 'enum class %s {\n' % ((decl.split(' ')[2])[2:])      
+      enumOut = '/* Enum: (%s, %s, %s) %s */\n'  % (enumMap, enumClassName, opsClassName, decl.split(' ')[2])  
+
+      enumOut += 'enum class %s {\n' % (enumClassName)      
       while True:
         enumLine = f.readline()
         #print('   %s' % enumLine)
@@ -49,10 +74,10 @@ def buildenums( vkpath ):
                         
         enumOut += '  %s = ::%s,\n' % ( newValName[1:], valName.strip() )  
   
-      enumOut += '};\n\n'
+      enumOut += '};\n'
+      enumOut += 'enum_ops( %s, %s )\n\n' % ( enumClassName, opsClassName )
       result += enumOut
   f.close();
-  print(enumlist)
   return result, enumlist
 
 def write_comment( out ):
@@ -129,9 +154,8 @@ def write_field( out, strField, enumdict ):
   bodyEnum = None
   if 'Vk' in fieldType:
     m = re.search( 'Vk[a-zA-Z0-9]*', fieldType )
-    if(m and enumdict.has_key( m.group(0))):
-      fieldType1 = fieldType.replace('Vk', 'Vk::')
-      bodyEnum = '{0:32},{1:32}, {2}'.format( fieldType1, fieldType, f );      
+    if(m and enumdict.has_key( m.group(0))):      
+      bodyEnum = '{0:32},{1:32}, {2}'.format( 'Vk::%s' % enumdict[m.group(0)], fieldType, f );      
   body = '{0:32}, {1}'.format( fieldType, f );
   disabled = ''
   if '[' in f:
